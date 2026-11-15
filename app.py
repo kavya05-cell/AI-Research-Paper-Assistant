@@ -4,11 +4,9 @@ from pathlib import Path
 
 import streamlit as st
 
-from modules.embedding_manager import (
-    DEFAULT_MODEL_NAME,
-    generate_embeddings,
-)
+from modules.embedding_manager import DEFAULT_MODEL_NAME, generate_embeddings
 from modules.pdf_processor import PDFProcessingError, extract_pdf_pages
+from modules.rag_chain import answer_question
 from modules.text_chunker import chunk_pages
 from modules.vector_store import FaissVectorStore
 
@@ -27,18 +25,19 @@ def main() -> None:
     st.caption("Understand research papers with Retrieval-Augmented Generation.")
 
     st.info(
-        "PDF extraction, chunking, embeddings, and vector-based semantic search "
-        "are available. LLM-based answer generation is the next milestone."
+        "Upload papers, build a searchable vector index, and ask questions. "
+        "Answers are generated from retrieved passages with page citations."
     )
 
     with st.sidebar:
         st.header("About")
         st.write(
-            "Upload research papers, create a searchable vector index, "
-            "and retrieve relevant passages."
+            "A source-grounded research assistant. Answers should be supported "
+            "by passages from your uploaded PDFs."
         )
         st.divider()
-        st.caption(f"Embedding model: all-MiniLM-L6-v2")
+        st.caption("Embedding model: all-MiniLM-L6-v2")
+        st.caption("LLM: Gemini 2.5 Flash")
         st.caption("Development build")
 
     st.subheader("Research library")
@@ -53,7 +52,6 @@ def main() -> None:
         if st.button("Process PDFs", type="primary"):
             all_pages = []
             errors = []
-
             with st.spinner("Extracting text from your PDFs..."):
                 for uploaded_file in uploaded_files:
                     try:
@@ -69,6 +67,7 @@ def main() -> None:
             st.session_state["extracted_pages"] = all_pages
             st.session_state.pop("text_chunks", None)
             st.session_state.pop("vector_store", None)
+            st.session_state.pop("last_answer", None)
 
             if all_pages:
                 st.success(f"Extracted text from {len(all_pages)} page(s).")
@@ -88,10 +87,13 @@ def main() -> None:
                 st.text(page_record["text"])
 
         st.subheader("Text chunking")
-        st.caption("800-token chunks with 120-token overlap; pages are split independently.")
+        st.caption(
+            "800-token chunks with 120-token overlap; pages are split independently."
+        )
         if st.button("Generate text chunks"):
             st.session_state["text_chunks"] = chunk_pages(extracted_pages)
             st.session_state.pop("vector_store", None)
+            st.session_state.pop("last_answer", None)
 
         text_chunks = st.session_state.get("text_chunks", [])
         if text_chunks:
@@ -107,16 +109,14 @@ def main() -> None:
 
             st.subheader("Embedding generation and vector index")
             st.write(
-                "The embedding model converts each chunk into a numerical "
-                "vector. FAISS stores those vectors for similarity search."
+                "Each chunk is converted into a numerical vector for semantic search."
             )
 
             if st.button("Generate embeddings and build search index", type="primary"):
                 try:
                     texts = [chunk["text"] for chunk in text_chunks]
                     with st.spinner(
-                        "Loading the embedding model and generating vectors. "
-                        "The first run may download model files..."
+                        "Generating embeddings. The first run may download model files..."
                     ):
                         embeddings = generate_embeddings(
                             texts,
@@ -130,43 +130,73 @@ def main() -> None:
                     st.success(
                         f"Created {embeddings.shape[0]} embeddings "
                         f"with {embeddings.shape[1]} dimensions and saved "
-                        "the FAISS index locally."
+                        "the vector index locally."
                     )
                 except Exception as exc:
                     st.error(f"Could not build the vector index: {exc}")
 
             store = st.session_state.get("vector_store")
             if store is not None:
-                st.subheader("Test semantic search")
-                query = st.text_input(
-                    "Ask a search question about your uploaded papers",
-                    placeholder="e.g. How does the paper detect network intrusions?",
+                st.subheader("Ask your research papers")
+                st.write(
+                    "Gemini answers using retrieved passages. Each answer should "
+                    "include document and page citations."
                 )
-                top_k = st.slider("Number of results", min_value=1, max_value=10, value=5)
+                question = st.text_area(
+                    "Your question",
+                    placeholder="e.g. What method does the paper propose for detecting network intrusions?",
+                    height=100,
+                )
+                top_k = st.slider(
+                    "Retrieved passages",
+                    min_value=1,
+                    max_value=10,
+                    value=5,
+                    key="rag_top_k",
+                )
 
-                if st.button("Search relevant chunks"):
-                    if not query.strip():
-                        st.warning("Enter a search question first.")
+                if st.button("Generate grounded answer", type="primary"):
+                    if not question.strip():
+                        st.warning("Enter a question first.")
                     else:
                         try:
-                            with st.spinner("Searching the vector index..."):
+                            with st.spinner(
+                                "Retrieving relevant passages and asking Gemini..."
+                            ):
                                 query_vector = generate_embeddings(
-                                    [query],
+                                    [question],
                                     model_name=DEFAULT_MODEL_NAME,
                                 )
-                                results = store.search(query_vector, top_k=top_k)
+                                retrieved = store.search(
+                                    query_vector,
+                                    top_k=top_k,
+                                )
+                                answer = answer_question(question, retrieved)
 
-                            for rank, result in enumerate(results, start=1):
-                                metadata = result["metadata"]
-                                with st.expander(
-                                    f'#{rank} · {metadata.get("source")} · '
-                                    f'Page {metadata.get("page")} · '
-                                    f'Similarity {result["similarity"]:.3f}',
-                                    expanded=(rank == 1),
-                                ):
-                                    st.write(result["text"])
+                            st.session_state["last_answer"] = {
+                                "question": question,
+                                "answer": answer,
+                                "sources": retrieved,
+                            }
                         except Exception as exc:
-                            st.error(f"Semantic search failed: {exc}")
+                            st.error(f"Could not generate an answer: {exc}")
+
+                last_answer = st.session_state.get("last_answer")
+                if last_answer:
+                    st.markdown("### Answer")
+                    st.markdown(last_answer["answer"])
+
+                    with st.expander("Retrieved source passages"):
+                        for rank, result in enumerate(
+                            last_answer["sources"], start=1
+                        ):
+                            metadata = result.get("metadata", {})
+                            st.markdown(
+                                f'**{rank}. {metadata.get("source", "Unknown")} '
+                                f'— Page {metadata.get("page", "?")} '
+                                f'— Similarity {result.get("similarity", 0):.3f}**'
+                            )
+                            st.write(result.get("text", ""))
 
 
 if __name__ == "__main__":
