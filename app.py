@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from modules.embedding_manager import DEFAULT_MODEL_NAME, generate_embeddings
+from modules.paper_fetcher import PaperFetchError, extract_pages_from_url
 from modules.pdf_processor import PDFProcessingError, extract_pdf_pages
 from modules.rag_chain import answer_question
 from modules.text_chunker import chunk_pages
@@ -12,6 +13,12 @@ from modules.vector_store import FaissVectorStore
 
 
 VECTOR_STORE_DIR = Path("data/vector_store")
+
+
+def invalidate_downstream_state() -> None:
+    """Clear chunks, index and previous answers when source documents change."""
+    for key in ("text_chunks", "vector_store", "last_answer"):
+        st.session_state.pop(key, None)
 
 
 def main() -> None:
@@ -25,15 +32,15 @@ def main() -> None:
     st.caption("Understand research papers with Retrieval-Augmented Generation.")
 
     st.info(
-        "Upload papers, build a searchable vector index, and ask questions. "
-        "Answers are generated from retrieved passages with page citations."
+        "Upload PDFs or import publicly accessible paper links. Build a searchable "
+        "vector index and ask questions with source-page citations."
     )
 
     with st.sidebar:
         st.header("About")
         st.write(
             "A source-grounded research assistant. Answers should be supported "
-            "by passages from your uploaded PDFs."
+            "by passages from your imported research papers."
         )
         st.divider()
         st.caption("Embedding model: all-MiniLM-L6-v2")
@@ -41,50 +48,94 @@ def main() -> None:
         st.caption("Development build")
 
     st.subheader("Research library")
-    uploaded_files = st.file_uploader(
-        "Select research papers (PDF)",
-        type=["pdf"],
-        accept_multiple_files=True,
-    )
 
-    if uploaded_files:
-        st.write(f"Selected {len(uploaded_files)} PDF file(s).")
-        if st.button("Process PDFs", type="primary"):
-            all_pages = []
-            errors = []
-            with st.spinner("Extracting text from your PDFs..."):
-                for uploaded_file in uploaded_files:
-                    try:
-                        all_pages.extend(
-                            extract_pdf_pages(
-                                uploaded_file.getvalue(),
-                                uploaded_file.name,
+    upload_tab, url_tab = st.tabs(["Upload PDF", "Import using URL"])
+
+    with upload_tab:
+        uploaded_files = st.file_uploader(
+            "Select research papers (PDF)",
+            type=["pdf"],
+            accept_multiple_files=True,
+            key="paper_pdf_uploader",
+        )
+
+        if uploaded_files:
+            st.write(f"Selected {len(uploaded_files)} PDF file(s).")
+            if st.button("Process uploaded PDFs", type="primary"):
+                new_pages = []
+                errors = []
+                with st.spinner("Extracting text from uploaded PDFs..."):
+                    for uploaded_file in uploaded_files:
+                        try:
+                            new_pages.extend(
+                                extract_pdf_pages(
+                                    uploaded_file.getvalue(),
+                                    uploaded_file.name,
+                                )
                             )
-                        )
-                    except PDFProcessingError as exc:
-                        errors.append(str(exc))
+                        except PDFProcessingError as exc:
+                            errors.append(str(exc))
 
-            st.session_state["extracted_pages"] = all_pages
-            st.session_state.pop("text_chunks", None)
-            st.session_state.pop("vector_store", None)
-            st.session_state.pop("last_answer", None)
+                if new_pages:
+                    existing = st.session_state.get("extracted_pages", [])
+                    st.session_state["extracted_pages"] = existing + new_pages
+                    invalidate_downstream_state()
+                    st.success(
+                        f"Added {len(new_pages)} page(s) from uploaded PDFs."
+                    )
+                for error in errors:
+                    st.error(error)
 
-            if all_pages:
-                st.success(f"Extracted text from {len(all_pages)} page(s).")
-            for error in errors:
-                st.error(error)
-    else:
-        st.write("Upload one or more research papers to get started.")
+    with url_tab:
+        paper_url = st.text_input(
+            "Research paper URL",
+            placeholder="https://arxiv.org/abs/1706.03762 or a direct PDF URL",
+            help=(
+                "Stage 1 supports direct public PDF links and arXiv abstract/PDF "
+                "links. Subscription-only pages cannot be downloaded."
+            ),
+            key="paper_url_input",
+        )
+        if st.button("Fetch and import paper", type="primary"):
+            if not paper_url.strip():
+                st.warning("Paste a research-paper URL first.")
+            else:
+                try:
+                    with st.spinner("Fetching the public PDF and extracting its text..."):
+                        new_pages, final_url = extract_pages_from_url(paper_url)
+
+                    existing = st.session_state.get("extracted_pages", [])
+                    st.session_state["extracted_pages"] = existing + new_pages
+                    invalidate_downstream_state()
+                    st.success(
+                        f"Imported {len(new_pages)} page(s) from the linked paper."
+                    )
+                    st.caption(f"Resolved paper URL: {final_url}")
+                except PaperFetchError as exc:
+                    st.error(str(exc))
 
     extracted_pages = st.session_state.get("extracted_pages", [])
     if extracted_pages:
-        with st.expander(f"Extracted pages ({len(extracted_pages)})"):
+        st.subheader("Imported research papers")
+        source_names = sorted(
+            {page.get("metadata", {}).get("source", "Unknown") for page in extracted_pages}
+        )
+        st.write(
+            f"Library contains {len(source_names)} document(s) "
+            f"and {len(extracted_pages)} text-bearing page(s)."
+        )
+        for source in source_names:
+            st.markdown(f"- {source}")
+
+        with st.expander(f"Extracted page text ({len(extracted_pages)} pages)"):
             for page_record in extracted_pages:
                 metadata = page_record["metadata"]
                 st.markdown(
                     f'**{metadata["source"]} — Page {metadata["page"]}**'
                 )
                 st.text(page_record["text"])
+                if metadata.get("source_url"):
+                    st.caption(f'Source URL: {metadata["source_url"]}')
 
         st.subheader("Text chunking")
         st.caption(
@@ -92,8 +143,7 @@ def main() -> None:
         )
         if st.button("Generate text chunks"):
             st.session_state["text_chunks"] = chunk_pages(extracted_pages)
-            st.session_state.pop("vector_store", None)
-            st.session_state.pop("last_answer", None)
+            invalidate_downstream_state()
 
         text_chunks = st.session_state.get("text_chunks", [])
         if text_chunks:
