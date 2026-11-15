@@ -1,4 +1,8 @@
-"""Grounded question answering over retrieved research-paper passages."""
+"""Grounded question answering over retrieved research-paper passages.
+
+Uses Google's official google-genai SDK directly to avoid loading optional
+LangChain integrations and their native xxhash dependency chain.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,8 @@ import os
 from typing import Any
 
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+from google import genai
+from google.genai import types
 
 
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
@@ -68,11 +73,14 @@ SOURCE PASSAGES:
 
 GROUNDED ANSWER:"""
 
-    llm = ChatGoogleGenerativeAI(
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
         model=model_name,
-        google_api_key=api_key,
-        temperature=0.2,
-        max_retries=2,
+        contents=prompt,
+        config=types.GenerateContentConfig(temperature=0.2),
     )
-    response = llm.invoke(prompt)
-    return str(response.content).strip()
+
+    answer = response.text
+    if not answer:
+        raise RuntimeError("Gemini returned an empty response.")
+    return answer.strip()
