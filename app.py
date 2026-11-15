@@ -142,8 +142,8 @@ def main() -> None:
             "800-token chunks with 120-token overlap; pages are split independently."
         )
         if st.button("Generate text chunks"):
-            st.session_state["text_chunks"] = chunk_pages(extracted_pages)
             invalidate_downstream_state()
+            st.session_state["text_chunks"] = chunk_pages(extracted_pages)
 
         text_chunks = st.session_state.get("text_chunks", [])
         if text_chunks:
