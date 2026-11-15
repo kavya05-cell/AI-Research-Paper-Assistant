@@ -5,6 +5,7 @@
 
 
 
+
 ## Overview
 
 AI Research Paper Assistant is an intelligent application designed to simplify the process of reading, understanding, and analyzing scientific research papers.
@@ -90,7 +91,7 @@ Research Paper (PDF)
    Source References
 ```
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 | Technology            | Purpose                               |
 | --------------------- | ------------------------------------- |
