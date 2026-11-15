@@ -27,7 +27,7 @@ def main() -> None:
     st.caption("Understand research papers with Retrieval-Augmented Generation.")
 
     st.info(
-        "PDF extraction, chunking, embeddings, and FAISS semantic search "
+        "PDF extraction, chunking, embeddings, and vector-based semantic search "
         "are available. LLM-based answer generation is the next milestone."
     )
 
@@ -105,13 +105,13 @@ def main() -> None:
                     )
                     st.write(chunk["text"])
 
-            st.subheader("Embedding generation and FAISS index")
+            st.subheader("Embedding generation and vector index")
             st.write(
                 "The embedding model converts each chunk into a numerical "
                 "vector. FAISS stores those vectors for similarity search."
             )
 
-            if st.button("Generate embeddings and build FAISS index", type="primary"):
+            if st.button("Generate embeddings and build search index", type="primary"):
                 try:
                     texts = [chunk["text"] for chunk in text_chunks]
                     with st.spinner(
