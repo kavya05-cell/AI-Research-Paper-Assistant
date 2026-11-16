@@ -262,7 +262,32 @@ def main() -> None:
                 last_comparison = st.session_state.get("last_comparison")
                 if last_comparison:
                     st.markdown("### Comparative analysis")
-                    st.markdown(last_comparison["comparison"])
+                    comparison_data = last_comparison["comparison"]
+                    st.write(comparison_data.get("overview", ""))
+
+                    table_rows = []
+                    for row in comparison_data.get("comparison", []):
+                        table_row = {"Dimension": row.get("dimension", "")}
+                        table_row.update(row.get("findings", {}))
+                        table_rows.append(table_row)
+                    if table_rows:
+                        st.dataframe(
+                            table_rows,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    st.markdown("#### Key similarities and differences")
+                    for item in comparison_data.get("similarities", []):
+                        st.markdown(f"- {item}")
+
+                    st.markdown("#### Evidence gaps")
+                    gaps = comparison_data.get("evidence_gaps", [])
+                    if gaps:
+                        for item in gaps:
+                            st.markdown(f"- {item}")
+                    else:
+                        st.write("No additional evidence gaps were reported.")
                     with st.expander("Evidence retrieved for each paper"):
                         for source, passages in last_comparison["passages"].items():
                             st.markdown(f"**{source}**")
