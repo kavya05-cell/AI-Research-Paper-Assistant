@@ -49,6 +49,8 @@ def compare_papers(
     if len(paper_contexts) < 2:
         raise ValueError("At least two selected papers need retrievable text passages.")
 
+    combined_context = "\n\n".join(paper_contexts)
+
     prompt = f"""You are an academic research analyst comparing scientific papers.
 
 Use ONLY the supplied excerpts. Treat each paper independently and do not
@@ -76,7 +78,7 @@ Instructions:
    a like-for-like comparison.
 
 SOURCE EXCERPTS:
-{"\n\n".join(paper_contexts)}
+{combined_context}
 
 COMPARATIVE ANALYSIS:"""
 
