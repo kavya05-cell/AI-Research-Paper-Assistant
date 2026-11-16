@@ -62,10 +62,19 @@ Comparison request:
 
 Instructions:
 1. Begin with a short overview of what each paper investigates.
-2. Provide a Markdown comparison table. Use rows for research problem,
-   objective, methodology/architecture, algorithms, datasets, evaluation
-   metrics, key findings, and limitations. Use "Not stated in supplied
-   excerpts" where evidence is absent.
+2. Provide a syntactically valid GitHub-Flavored Markdown table with exactly
+   this structure:
+   | Dimension | Paper 1 filename | Paper 2 filename [and one column for each additional paper] |
+   |---|---|---|
+   | Research problem | ... | ... |
+   Include rows for objective, methodology/architecture, algorithms,
+   datasets, evaluation metrics, key findings, and limitations as well.
+   Replace the example paper labels with the exact filenames supplied.
+   Every row must have exactly one cell per selected paper. Do not omit the
+   Markdown separator row (the row containing ---).
+   Do not put newline characters inside table cells; use concise phrases
+   and semicolons. Use "Not stated in supplied excerpts" where evidence is
+   absent. Do not put the table inside a code fence.
 3. Follow the table with an analytical comparison describing important
    similarities and differences.
 4. Cite every paper-specific factual claim using the exact paper filename
@@ -76,6 +85,8 @@ Instructions:
    could not be established from the supplied excerpts.
 8. Do not claim that a paper is better unless the supplied evidence supports
    a like-for-like comparison.
+9. There must be one table column for every paper in SOURCE EXCERPTS.
+   Do not accidentally compare only the first paper or leave out a paper.
 
 SOURCE EXCERPTS:
 {combined_context}
