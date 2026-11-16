@@ -7,6 +7,7 @@ LangChain integrations and their native xxhash dependency chain.
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -74,11 +75,44 @@ SOURCE PASSAGES:
 GROUNDED ANSWER:"""
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.2),
-    )
+    # Temporary 429/503 provider overloads can recover after a short wait.
+    response = None
+    retry_delays = (2, 4, 8)
+    for attempt in range(len(retry_delays) + 1):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.2),
+            )
+            break
+        except Exception as exc:
+            error_text = str(exc).lower()
+            status_code = getattr(exc, "code", None) or getattr(
+                exc, "status_code", None
+            )
+            transient = (
+                status_code in (429, 500, 502, 503, 504)
+                or any(
+                    marker in error_text
+                    for marker in (
+                        "503 unavailable",
+                        "service unavailable",
+                        "high demand",
+                        "resource_exhausted",
+                        "429",
+                    )
+                )
+            )
+            if not transient or attempt == len(retry_delays):
+                if transient:
+                    raise RuntimeError(
+                        "Gemini is temporarily overloaded or rate-limited. "
+                        "Please wait a minute and try again. Your imported papers "
+                        "and vector index do not need to be rebuilt."
+                    ) from exc
+                raise
+            time.sleep(retry_delays[attempt])
 
     answer = response.text
     if not answer:
