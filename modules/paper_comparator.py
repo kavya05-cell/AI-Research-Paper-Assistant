@@ -67,11 +67,19 @@ Instructions:
 2. Begin with a short overview of what each paper investigates.
 3. Provide a syntactically valid GitHub-Flavored Markdown table with exactly
    this structure:
-   | Dimension | Paper 1 filename | Paper 2 filename [and one column for each additional paper] |
+   | Dimension | paper filename | paper filename |
    |---|---|---|
-   | Research problem | ... | ... |
-   Include rows for objective, methodology/architecture, algorithms,
-   datasets, evaluation metrics, key findings, and limitations as well.
+   | Research problem | concise evidence-based summary | concise evidence-based summary |
+   | Objective | ... | ... |
+   | Methodology/architecture | ... | ... |
+   | Algorithms | ... | ... |
+   | Datasets | ... | ... |
+   | Evaluation metrics | ... | ... |
+   | Key findings | ... | ... |
+   | Limitations | ... | ... |
+   Replace the two example paper filename headers with the exact filenames
+   supplied. For more than two papers, add one column for each paper and
+   keep the same rows across all columns.
    Replace the example paper labels with the exact filenames supplied.
    Every row must have exactly one cell per selected paper. Do not omit the
    Markdown separator row (the row containing ---).
@@ -105,7 +113,8 @@ COMPARATIVE ANALYSIS:"""
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.2,
-                    max_output_tokens=1800,
+                    max_output_tokens=2500,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             break
