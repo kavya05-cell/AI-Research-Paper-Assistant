@@ -38,9 +38,11 @@ def compare_papers(
         for index, chunk in enumerate(chunks, start=1):
             metadata = chunk.get("metadata", {})
             page = metadata.get("page", "Unknown")
+            # Bound prompt size so comparisons remain responsive.
+            passage_text = str(chunk.get("text", ""))[:2200]
             passages.append(
                 f"[{paper_name} | Page {page} | Passage {index}]\n"
-                f"{chunk.get('text', '')}"
+                f"{passage_text}"
             )
         paper_contexts.append(
             f"===== PAPER: {paper_name} =====\n" + "\n\n".join(passages)
@@ -61,8 +63,9 @@ Comparison request:
 {comparison_focus}
 
 Instructions:
-1. Begin with a short overview of what each paper investigates.
-2. Provide a syntactically valid GitHub-Flavored Markdown table with exactly
+1. Keep the entire comparison concise and decision-oriented.
+2. Begin with a short overview of what each paper investigates.
+3. Provide a syntactically valid GitHub-Flavored Markdown table with exactly
    this structure:
    | Dimension | Paper 1 filename | Paper 2 filename [and one column for each additional paper] |
    |---|---|---|
@@ -75,17 +78,16 @@ Instructions:
    Do not put newline characters inside table cells; use concise phrases
    and semicolons. Use "Not stated in supplied excerpts" where evidence is
    absent. Do not put the table inside a code fence.
-3. Follow the table with an analytical comparison describing important
-   similarities and differences.
-4. Cite every paper-specific factual claim using the exact paper filename
+4. Follow the table with no more than 3 concise bullets describing the most
+   important similarities and differences.
+5. Cite every paper-specific factual claim using the exact paper filename
    and page number in this format: [Source: filename.pdf, Page: 4].
-5. Never invent citations, page numbers, results, or missing details.
-6. Clearly distinguish evidence from cautious interpretation.
-7. End with a short section titled "Evidence gaps" listing information that
-   could not be established from the supplied excerpts.
-8. Do not claim that a paper is better unless the supplied evidence supports
+6. Never invent citations, page numbers, results, or missing details.
+7. Clearly distinguish evidence from cautious interpretation.
+8. End with a short "Evidence gaps" section containing at most 3 bullets.
+9. Do not claim that a paper is better unless the supplied evidence supports
    a like-for-like comparison.
-9. There must be one table column for every paper in SOURCE EXCERPTS.
+10. There must be one table column for every paper in SOURCE EXCERPTS.
    Do not accidentally compare only the first paper or leave out a paper.
 
 SOURCE EXCERPTS:
@@ -101,7 +103,10 @@ COMPARATIVE ANALYSIS:"""
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config=types.GenerateContentConfig(temperature=0.2),
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    max_output_tokens=1800,
+                ),
             )
             break
         except Exception as exc:
