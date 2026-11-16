@@ -79,6 +79,48 @@ class FaissVectorStore:
             for index in top_indices
         ]
 
+    def search_by_source(
+        self,
+        query_embedding: np.ndarray,
+        sources: list[str],
+        top_k_per_source: int = 5,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Retrieve the most relevant chunks separately for each selected paper."""
+        if self.vectors is None:
+            raise RuntimeError("The vector index has not been built.")
+        if top_k_per_source < 1:
+            raise ValueError("top_k_per_source must be at least 1.")
+
+        query = np.asarray(query_embedding, dtype=np.float32).reshape(1, -1)
+        if query.shape[1] != self.vectors.shape[1]:
+            raise ValueError("Query embedding dimension does not match the index.")
+        query_norm = np.linalg.norm(query)
+        if query_norm == 0:
+            raise ValueError("Query embedding must not be a zero vector.")
+        query = query / query_norm
+
+        scores = (self.vectors @ query.T).ravel()
+        results: dict[str, list[dict[str, Any]]] = {}
+        for source in sources:
+            matching_indices = [
+                index
+                for index, record in enumerate(self.records)
+                if record.get("metadata", {}).get("source") == source
+            ]
+            ranked = sorted(
+                matching_indices,
+                key=lambda index: float(scores[index]),
+                reverse=True,
+            )[:top_k_per_source]
+            results[source] = [
+                {
+                    **self.records[index],
+                    "similarity": float(scores[index]),
+                }
+                for index in ranked
+            ]
+        return results
+
     def save(self, directory: str | Path) -> None:
         if self.vectors is None:
             raise RuntimeError("Cannot save an index before building it.")
