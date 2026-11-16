@@ -218,8 +218,8 @@ def main() -> None:
                 comparison_top_k = st.slider(
                     "Relevant passages per paper",
                     min_value=2,
-                    max_value=8,
-                    value=4,
+                    max_value=5,
+                    value=3,
                     key="comparison_top_k",
                 )
 
@@ -229,7 +229,7 @@ def main() -> None:
                     else:
                         try:
                             with st.spinner(
-                                "Retrieving evidence from each paper and generating comparison..."
+                                "Retrieving a small set of relevant passages and generating a concise comparison..."
                             ):
                                 comparison_query = (
                                     comparison_focus
