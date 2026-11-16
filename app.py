@@ -6,6 +6,7 @@ import streamlit as st
 
 from modules.embedding_manager import DEFAULT_MODEL_NAME, generate_embeddings
 from modules.paper_fetcher import PaperFetchError, extract_pages_from_url
+from modules.paper_comparator import compare_papers
 from modules.pdf_processor import PDFProcessingError, extract_pdf_pages
 from modules.rag_chain import answer_question
 from modules.text_chunker import chunk_pages
@@ -17,7 +18,7 @@ VECTOR_STORE_DIR = Path("data/vector_store")
 
 def invalidate_downstream_state() -> None:
     """Clear chunks, index and previous answers when source documents change."""
-    for key in ("text_chunks", "vector_store", "last_answer"):
+    for key in ("text_chunks", "vector_store", "last_answer", "last_comparison"):
         st.session_state.pop(key, None)
 
 
@@ -187,6 +188,94 @@ def main() -> None:
 
             store = st.session_state.get("vector_store")
             if store is not None:
+                st.subheader("Compare multiple research papers")
+                st.write(
+                    "Select at least two papers. The system retrieves relevant "
+                    "passages from each paper separately so one paper does not "
+                    "dominate the comparison."
+                )
+                available_sources = sorted(
+                    {
+                        chunk.get("metadata", {}).get("source", "Unknown")
+                        for chunk in text_chunks
+                    }
+                )
+                selected_sources = st.multiselect(
+                    "Choose papers to compare",
+                    options=available_sources,
+                    default=available_sources[: min(2, len(available_sources))],
+                    key="comparison_sources",
+                )
+                comparison_focus = st.text_input(
+                    "Comparison focus",
+                    value=(
+                        "Compare the research problem, objectives, methodology, "
+                        "algorithms, datasets, evaluation metrics, findings, and "
+                        "limitations."
+                    ),
+                    key="comparison_focus",
+                )
+                comparison_top_k = st.slider(
+                    "Relevant passages per paper",
+                    min_value=2,
+                    max_value=8,
+                    value=4,
+                    key="comparison_top_k",
+                )
+
+                if st.button("Compare selected papers", type="primary"):
+                    if len(selected_sources) < 2:
+                        st.warning("Select at least two different papers.")
+                    else:
+                        try:
+                            with st.spinner(
+                                "Retrieving evidence from each paper and generating comparison..."
+                            ):
+                                comparison_query = (
+                                    comparison_focus
+                                    + " Research problem, objective, methodology, "
+                                    "model, dataset, metrics, results, limitations."
+                                )
+                                query_vector = generate_embeddings(
+                                    [comparison_query],
+                                    model_name=DEFAULT_MODEL_NAME,
+                                )
+                                per_paper_passages = store.search_by_source(
+                                    query_vector,
+                                    selected_sources,
+                                    top_k_per_source=comparison_top_k,
+                                )
+                                comparison = compare_papers(
+                                    per_paper_passages,
+                                    comparison_focus=comparison_focus,
+                                )
+
+                            st.session_state["last_comparison"] = {
+                                "sources": selected_sources,
+                                "focus": comparison_focus,
+                                "comparison": comparison,
+                                "passages": per_paper_passages,
+                            }
+                        except Exception as exc:
+                            st.error(f"Could not compare the papers: {exc}")
+
+                last_comparison = st.session_state.get("last_comparison")
+                if last_comparison:
+                    st.markdown("### Comparative analysis")
+                    st.markdown(last_comparison["comparison"])
+                    with st.expander("Evidence retrieved for each paper"):
+                        for source, passages in last_comparison["passages"].items():
+                            st.markdown(f"**{source}**")
+                            if not passages:
+                                st.warning("No indexed passages found for this paper.")
+                            for passage in passages:
+                                metadata = passage.get("metadata", {})
+                                st.markdown(
+                                    f'- Page {metadata.get("page", "?")} '
+                                    f'(similarity {passage.get("similarity", 0):.3f})'
+                                )
+                                st.write(passage.get("text", ""))
+
                 st.subheader("Ask your research papers")
                 st.write(
                     "Gemini answers using retrieved passages. Each answer should "
